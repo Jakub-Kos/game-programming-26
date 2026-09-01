@@ -1,7 +1,10 @@
 file(GLOB file_src_list "*.c" "*.cpp")
 
 foreach(file_src ${file_src_list})
-	get_filename_component(targetname ${file_src} NAME_WLE)
+	get_filename_component(targetname_base ${file_src} NAME_WLE)
+	# prefixed to avoid colliding with same-named targets in exercises/ etc.
+	# (CMake executable target names are global, not per-directory)
+	set(targetname "mysol_${targetname_base}")
 	add_executable(${targetname} ${file_src})
 
 	# link all libraries that we will need during the course
