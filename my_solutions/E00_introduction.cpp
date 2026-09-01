@@ -1,4 +1,6 @@
 #include <SDL3/SDL.h>
+#include <cstdlib>
+#include <ctime>
 
 int main(int argc, char* argv[])
 {
@@ -24,7 +26,7 @@ int main(int argc, char* argv[])
 	SDL_Time walltime_frame_beg;
 	SDL_Time walltime_work_end;
 	SDL_Time walltime_frame_end = 0;
-	SDL_Time time_elapsed_frame;
+	SDL_Time time_elapsed_frame = 0;
 	SDL_Time time_elapsed_work;
 
 	SDL_Time time_elapsed_sleep;
@@ -39,9 +41,37 @@ int main(int argc, char* argv[])
 	player_rect.x = window_w / 2 - player_size / 2;
 	player_rect.y = window_h / 2 - player_size / 2;
 
-	float player_speed = 10;
+	// player speed is in pixels/second, not pixels/frame
+	float player_speed = 400;
 
-	bool btn_pressed_up = false;
+	bool key_held_w = false;
+	bool key_held_a = false;
+	bool key_held_s = false;
+	bool key_held_d = false;
+
+	// 00.2: a few NPCs bouncing around the screen; touching one ends the game
+	const int npc_count = 4;
+	SDL_FRect npc_rect[npc_count];
+	float npc_vel_x[npc_count];
+	float npc_vel_y[npc_count];
+
+	srand((unsigned int)time(NULL));
+	for(int i = 0; i < npc_count; i++)
+	{
+		float npc_size = 30;
+		npc_rect[i].w = npc_size;
+		npc_rect[i].h = npc_size;
+		npc_rect[i].x = (float)(rand() % (int)(window_w - npc_size));
+		npc_rect[i].y = (float)(rand() % (int)(window_h - npc_size));
+
+		// random direction, fixed speed, so no NPC ends up stuck at 0 velocity
+		float angle = (float)(rand() % 360) * (SDL_PI_F / 180.0f);
+		float npc_speed = 150;
+		npc_vel_x[i] = SDL_cosf(angle) * npc_speed;
+		npc_vel_y[i] = SDL_sinf(angle) * npc_speed;
+	}
+
+	bool game_over = false;
 
 	SDL_GetCurrentTime(&walltime_frame_beg);
 	while(!quit)
@@ -50,7 +80,7 @@ int main(int argc, char* argv[])
 		SDL_Event event;
 		while(SDL_PollEvent(&event))
 		{
-			switch(event.type)
+			switch (event.type)
 			{
 				case SDL_EVENT_QUIT:
 					quit = true;
@@ -60,20 +90,58 @@ int main(int argc, char* argv[])
 						delay_type = event.key.key - SDLK_1;
 					switch (event.key.key)
 					{
-						case SDLK_W:
-						player_rect.y -= player_speed;
-						break;
-						case SDLK_S:
-						player_rect.y += player_speed;
-						break;
-						case SDLK_A:
-						player_rect.x -= player_speed;
-						break;
-						case SDLK_D:
-						player_rect.x += player_speed;
-						break;
+						case SDLK_W: key_held_w = true; break;
+						case SDLK_A: key_held_a = true; break;
+						case SDLK_S: key_held_s = true; break;
+						case SDLK_D: key_held_d = true; break;
 					}
-				break;
+					break;
+				case SDL_EVENT_KEY_UP:
+					switch (event.key.key)
+					{
+						case SDLK_W: key_held_w = false; break;
+						case SDLK_A: key_held_a = false; break;
+						case SDLK_S: key_held_s = false; break;
+						case SDLK_D: key_held_d = false; break;
+					}
+					break;
+			}
+		}
+
+		float delta_time_s = (float)time_elapsed_frame / 1000000000.0f;
+
+		if(!game_over)
+		{
+			float move_x = (key_held_d ? 1.0f : 0.0f) - (key_held_a ? 1.0f : 0.0f);
+			float move_y = (key_held_s ? 1.0f : 0.0f) - (key_held_w ? 1.0f : 0.0f);
+			if(move_x != 0.0f && move_y != 0.0f)
+			{
+				// normalize so diagonal movement isn't faster than axis movement
+				move_x *= 0.70710678f;
+				move_y *= 0.70710678f;
+			}
+			player_rect.x += move_x * player_speed * delta_time_s;
+			player_rect.y += move_y * player_speed * delta_time_s;
+
+			// 00.2: keep the player fully on screen
+			player_rect.x = SDL_clamp(player_rect.x, 0.0f, window_w - player_rect.w);
+			player_rect.y = SDL_clamp(player_rect.y, 0.0f, window_h - player_rect.h);
+
+			// 00.2: move NPCs and bounce them off the window edges
+			for(int i = 0; i < npc_count; i++)
+			{
+				npc_rect[i].x += npc_vel_x[i] * delta_time_s;
+				npc_rect[i].y += npc_vel_y[i] * delta_time_s;
+
+				if(npc_rect[i].x < 0.0f || npc_rect[i].x > window_w - npc_rect[i].w)
+					npc_vel_x[i] = -npc_vel_x[i];
+				if(npc_rect[i].y < 0.0f || npc_rect[i].y > window_h - npc_rect[i].h)
+					npc_vel_y[i] = -npc_vel_y[i];
+				npc_rect[i].x = SDL_clamp(npc_rect[i].x, 0.0f, window_w - npc_rect[i].w);
+				npc_rect[i].y = SDL_clamp(npc_rect[i].y, 0.0f, window_h - npc_rect[i].h);
+
+				if(SDL_HasRectIntersectionFloat(&player_rect, &npc_rect[i]))
+					game_over = true;
 			}
 		}
 
@@ -85,6 +153,9 @@ int main(int argc, char* argv[])
 		
 		SDL_SetRenderDrawColor(renderer, 0x3C, 0x63, 0xFF, 0XFF);
 		SDL_RenderFillRect(renderer, &player_rect);
+
+		SDL_SetRenderDrawColor(renderer, 0xFF, 0x40, 0x40, 0xFF);
+		SDL_RenderFillRects(renderer, npc_rect, npc_count);
 
 		SDL_GetCurrentTime(&walltime_work_end);
 		time_elapsed_work = walltime_work_end - walltime_frame_beg;
@@ -164,6 +235,12 @@ int main(int argc, char* argv[])
 
 		SDL_RenderDebugTextFormat(renderer, 10.0f, 50.0f, "time spent sleeping   : %9.6f ms", (float)time_elapsed_sleep/(float)1000000);
 		SDL_RenderDebugTextFormat(renderer, 10.0f, 60.0f, "time spent busywaiting: %9.6f ms", (float)time_elapsed_busywait/(float)1000000);
+
+		if(game_over)
+		{
+			SDL_SetRenderDrawColor(renderer, 0xFF, 0x40, 0x40, 0xFF);
+			SDL_RenderDebugTextFormat(renderer, window_w / 2 - 40, window_h / 2, "GAME OVER");
+		}
 
 
 		// render
