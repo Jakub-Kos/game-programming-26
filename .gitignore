@@ -19,3 +19,12 @@ imgui.ini
 
 # unix swap files
 *swp
+
+# stray compiled binaries left behind when building outside build/
+# (executables have no extension; source/config files always do)
+examples/*
+!examples/*.*
+exercises/*
+!exercises/*.*
+playground/*
+!playground/*.*
